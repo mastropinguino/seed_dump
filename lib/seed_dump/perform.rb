@@ -23,6 +23,11 @@ module SeedDump
       @indent          = " " * (env['INDENT'].nil? ? 2 : env['INDENT'].to_i)
       @opts['models']  = @opts['models'].split(',').collect {|x| x.underscore.singularize.camelize }
       @opts['split_dump'] = !env['SPLIT_DUMP'].nil?
+      @opts['force'] = !env['FORCE'].nil?
+
+      if !@opts['force'] && !@opts['split_dump'] and File.exists?(File.join(Rails.root, 'db', 'seeds.rb'))
+        abort "Seeds file already exists! Use FORCE=1 to overwrite"
+      end
     end
 
     def loadModels
@@ -82,6 +87,10 @@ module SeedDump
       end
     end
 
+    def model_to_filename(klass)
+      klass.to_s.gsub(/.*::/, '').underscore
+    end
+
     def writeFile(filename, cnt)
       FileUtils.mkdir_p(File.dirname(filename))
       File.open(filename, (@opts['append'] ? "a" : "w")) { |f|
@@ -93,11 +102,26 @@ module SeedDump
     #override the rails version of this function to NOT truncate strings
     def attribute_for_inspect(r,k)
       value = r.attributes[k]
+      if defined?(CarrierWave) and r.kind_of?(CarrierWave::Mount::Extension)
+        r.class.uploaders.keys.collect(&:to_s).include?(k)
+        value = r.send(k)
+      end
       
       if value.is_a?(String) && value.length > 50
         "#{value}".inspect
       elsif value.is_a?(Date) || value.is_a?(Time)
         %("#{value.to_s(:db)}")
+      elsif value.is_a?(BigDecimal)
+        value.to_s
+      elsif defined?(CarrierWave) and value.kind_of?(CarrierWave::Uploader::Base) and !value.path.nil?
+        filepath = value.path
+        model_dir = model_to_filename(r.class)
+        basedir = File.join(Rails.root, 'db', 'seeds', model_dir)
+        FileUtils.mkdir_p(basedir)
+        filename = File.basename(filepath)
+        saved_file = File.join(basedir, filename)
+        FileUtils.cp(filepath, saved_file, :verbose => true)
+        "File.open(File.join(Rails.root, 'db', 'seeds', '#{model_dir}', '#{filename}'))"
       else
         value.inspect
       end
@@ -111,7 +135,7 @@ module SeedDump
 
       if @opts['split_dump']
         dumpModels do |model, dump|
-          filename = File.join(File.dirname(@opts['file']) , 'seeds', model + '.rb')
+          filename = File.join(File.dirname(@opts['file']) , 'seeds', model_to_filename(model) + '.rb')
           puts "Writing #{filename}."
           writeFile(filename, dump)
         end
