@@ -58,6 +58,10 @@ Here is a full example using all of the options above:
 
   rake db:seed:dump MODELS=Category LIMIT=10 APPEND=true FILE=db/categories.rb WITH_ID=1 NO_DATA=1
 
+To create a splitted dump you can use SPLIT_DUMP.
+
+  rake db:seed:dump SPLIT_DUMP=1
+
 == All environment variables
 
 APPEND:
@@ -78,5 +82,7 @@ NO_DATA:
 WITH_ID:
  Inlcude the +:id+ in the create options
 
+SPLIT_DUMP:
+ Create splitted dump of models (specified via MODEL(S) env or all by default) in db/seeds/modelname.rb
 
 Copyright (c) 2010 Rob Halff, released under the MIT license
