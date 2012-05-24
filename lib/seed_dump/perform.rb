@@ -16,6 +16,9 @@ module SeedDump
 
     def setup(env)
       # config
+      @opts['ignore_fields'] = (env['IGNORE_FIELDS'] || "created_at,updated_at").split(',')
+
+      puts "Ignore fields #{@opts['ignore_fields']}"
       @opts['with_id'] = !env["WITH_ID"].nil?
       @opts['no-data'] = !env['NO_DATA'].nil?
       @opts['models']  = env['MODELS'] || (env['MODEL'] ? env['MODEL'] : "")
@@ -40,6 +43,9 @@ module SeedDump
     end
 
     def dumpAttribute(a_s,r,k,v)
+
+      return if @opts['ignore_fields'].include?(k.to_s)
+
       v = attribute_for_inspect(r,k)
       if k == 'id' && @opts['with_id']
         @id_set_string = "{ |c| c.#{k} = #{v} }.save"
@@ -55,9 +61,11 @@ module SeedDump
       arr = []
       arr = model.find(:all, @ar_options) unless @opts['no-data']
       arr = arr.empty? ? [model.new] : arr 
-      arr.each_with_index { |r,i| 
+      arr.each_with_index { |r,i|
         attr_s = [];
-        r.attributes.each { |k,v| dumpAttribute(attr_s,r,k,v) }
+        r.attributes.each { |k,v|
+          dumpAttribute(attr_s,r,k,v)
+        }
         if @id_set_string.empty?
           rows.push "#{@indent}{ " << attr_s.join(', ') << " }"
         else
@@ -77,7 +85,19 @@ module SeedDump
           m = model.constantize
           if m.ancestors.include?(ActiveRecord::Base)
             puts "Adding #{model} seeds." if @verbose
-            dump = dumpModel(m)
+
+            if m.respond_to?(:translation_class)
+              old_flag = @opts['with_id']
+              @opts['with_id'] = true
+              dump = dumpModel(m)
+              @opts['with_id'] = old_flag
+
+              puts " - Including translations for #{model}" if @verbose
+              dump += dumpModel(m.translation_class)
+
+            else
+              dump = dumpModel(m)
+            end
             if block_given?
               yield model, dump
             else
@@ -90,7 +110,7 @@ module SeedDump
     end
 
     def model_to_filename(klass)
-      klass.to_s.gsub(/.*::/, '').underscore
+      klass.to_s.underscore.gsub('/', '_')
     end
 
     def writeFile(filename, cnt)
